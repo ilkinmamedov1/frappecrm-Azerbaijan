@@ -150,6 +150,21 @@ def setup_custom_fields():
         view.is_default = 1
         view.save(ignore_permissions=True)
 
+    # Quick Filters (Bölge, Endüstri, VÖEN, Telefon, E-poçt) qlobal sazlaması
+    quick_filters = ['territory', 'industry', 'voen', 'phone', 'email']
+    if gs := frappe.db.exists('CRM Global Settings', {'dt': 'CRM Organization', 'type': 'Quick Filters'}):
+        frappe.db.set_value('CRM Global Settings', gs, 'json', json.dumps(quick_filters))
+    else:
+        doc = frappe.new_doc('CRM Global Settings')
+        doc.dt = 'CRM Organization'
+        doc.type = 'Quick Filters'
+        doc.json = json.dumps(quick_filters)
+        doc.insert(ignore_permissions=True)
+
+    from frappe.custom.doctype.property_setter.property_setter import make_property_setter
+    for f in ['territory', 'industry']:
+        make_property_setter('CRM Organization', f, 'in_standard_filter', '1', 'Check', validate_fields_for_doctype=False)
+
     frappe.db.commit()
     print("✓ Xüsusi sahələr və UI interfeysi hazırlandı.")
 
@@ -403,8 +418,133 @@ def setup_sample_pipeline(directors):
                 pass
 
     frappe.db.commit()
-    frappe.clear_cache()
     print(f"✓ Pipeline Sövdələşmələri (Deals) yaradıldı: {deals_created}")
+
+    # Leads yaratmaq
+    sample_leads = [
+        {'first_name': 'Elşən', 'last_name': 'Əliyev', 'organization': 'ProAV', 'status': 'Qualified', 'email': 'elshen@proav.az', 'mobile_no': '+994125254272', 'source': 'Exhibition', 'territory': 'Baku', 'industry': 'İT və Proqram Təminatı', 'lead_owner': 'Administrator'},
+        {'first_name': 'Səbinə', 'last_name': 'Qurbanova', 'organization': 'BATEEL', 'status': 'Contacted', 'email': 'info@bateel.az', 'mobile_no': '+994125116934', 'source': 'Campaign', 'territory': 'Baku', 'industry': 'Qida və İçki', 'lead_owner': 'Administrator'},
+        {'first_name': 'Elçin', 'last_name': 'Vəliyev', 'organization': 'VM MMC', 'status': 'New', 'email': 'elchin@vmc.az', 'mobile_no': '+994124906086', 'source': 'Cold Calling', 'territory': 'Baku', 'industry': 'Poliqrafiya, Çap və Nəşriyyat', 'lead_owner': 'Administrator'},
+        {'first_name': 'Loğman', 'last_name': 'Həsənov', 'organization': 'YOM Logistics', 'status': 'Nurture', 'email': 'logman@yomlogistics.az', 'mobile_no': '+994124482401', 'source': 'Reference', 'territory': 'Absheron District', 'industry': 'Logistika, Anbar və Nəqliyyat', 'lead_owner': 'Administrator'}
+    ]
+    leads_created = 0
+    for l in sample_leads:
+        if not frappe.db.exists('CRM Lead', {'email': l['email']}):
+            lead = frappe.get_doc({'doctype': 'CRM Lead', **l})
+            lead.insert(ignore_permissions=True)
+            leads_created += 1
+    frappe.db.commit()
+    print(f"✓ Müştəri namizədləri (Leads) yaradıldı: {leads_created}")
+
+    # Call Logs (Zəng Qeydləri) yaratmaq
+    call_logs = [
+        {
+            'id': 'CALL-2026-00001', 'from': '+994124482401', 'to': '+994502345678',
+            'type': 'Incoming', 'status': 'Completed', 'telephony_medium': 'Manual',
+            'duration': 185, 'start_time': '2026-11-16 11:30:00', 'end_time': '2026-11-16 11:33:05',
+            'receiver': 'Administrator', 'reference_doctype': 'CRM Organization', 'reference_docname': 'YOM Logistics',
+            'links': [{'link_doctype': 'CRM Organization', 'link_name': 'YOM Logistics'}]
+        },
+        {
+            'id': 'CALL-2026-00002', 'from': '+994502345678', 'to': '+994773223146',
+            'type': 'Outgoing', 'status': 'Completed', 'telephony_medium': 'Manual',
+            'duration': 240, 'start_time': '2026-11-16 14:15:00', 'end_time': '2026-11-16 14:19:00',
+            'caller': 'Administrator', 'reference_doctype': 'CRM Organization', 'reference_docname': 'Solida Xırdalan (SOLİDA MMC)',
+            'links': [{'link_doctype': 'CRM Organization', 'link_name': 'Solida Xırdalan (SOLİDA MMC)'}]
+        },
+        {
+            'id': 'CALL-2026-00003', 'from': '+994554007839', 'to': '+994502345678',
+            'type': 'Incoming', 'status': 'Completed', 'telephony_medium': 'Manual',
+            'duration': 120, 'start_time': '2026-11-16 16:00:00', 'end_time': '2026-11-16 16:02:00',
+            'receiver': 'Administrator', 'reference_doctype': 'CRM Organization', 'reference_docname': 'OBA MARKET - 69',
+            'links': [{'link_doctype': 'CRM Organization', 'link_name': 'OBA MARKET - 69'}]
+        }
+    ]
+    calls_created = 0
+    for cl in call_logs:
+        if not frappe.db.exists('CRM Call Log', cl['id']):
+            doc = frappe.get_doc({'doctype': 'CRM Call Log', **cl})
+            doc.insert(ignore_permissions=True)
+            calls_created += 1
+    frappe.db.commit()
+    print(f"✓ Zəng qeydləri (Call Logs) yaradıldı: {calls_created}")
+
+    # Calendar Events (Təqvim Tədbirləri) yaratmaq
+    events_data = [
+        {
+            'subject': 'YOM Logistics — İllik Daşıma Şərtlərinin Təsdiqi',
+            'starts_on': '2026-11-16 20:00:00', 'ends_on': '2026-11-16 21:00:00',
+            'color': '#10b981', 'event_type': 'Private', 'status': 'Open',
+            'description': 'YOM Logistics rəhbəri ilə illik logistika müqaviləsinin yekun təsdiqi və imzalanması.',
+            'reference_doctype': 'CRM Organization', 'reference_docname': 'YOM Logistics'
+        },
+        {
+            'subject': 'Solida Xırdalan MMC — Tikinti Tender Görüşü',
+            'starts_on': '2026-11-17 11:00:00', 'ends_on': '2026-11-17 12:30:00',
+            'color': '#3b82f6', 'event_type': 'Private', 'status': 'Open',
+            'description': 'Solida Xırdalan ilə material təchizatı üzrə qiymət danışıqları.',
+            'reference_doctype': 'CRM Organization', 'reference_docname': 'Solida Xırdalan (SOLİDA MMC)'
+        },
+        {
+            'subject': 'OBA MARKET — Satınalma Şöbəsi ilə Təqdimat',
+            'starts_on': '2026-11-18 15:00:00', 'ends_on': '2026-11-18 16:00:00',
+            'color': '#f59e0b', 'event_type': 'Private', 'status': 'Open',
+            'description': 'OBA Market şəbəkəsi ilə korporativ təchizat təqdimatı.',
+            'reference_doctype': 'CRM Organization', 'reference_docname': 'OBA MARKET - 69'
+        },
+        {
+            'subject': 'AZTEXNİKA MMC — Texnika Demo Nümayişi',
+            'starts_on': '2026-11-19 10:00:00', 'ends_on': '2026-11-19 11:00:00',
+            'color': '#8b5cf6', 'event_type': 'Private', 'status': 'Open',
+            'description': 'Sənaye avadanlıqlarının əyani nümayişi və sınaq işləri.',
+            'reference_doctype': 'CRM Organization', 'reference_docname': 'AZTEXNİKA MMC'
+        }
+    ]
+    events_created = 0
+    for ev in events_data:
+        if not frappe.db.exists('Event', {'subject': ev['subject']}):
+            doc = frappe.get_doc({'doctype': 'Event', 'owner': 'Administrator', **ev})
+            doc.insert(ignore_permissions=True)
+            events_created += 1
+    frappe.db.commit()
+    print(f"✓ Təqvim tədbirləri (Calendar Events) yaradıldı: {events_created}")
+
+    # Tasks (Görevler) yaratmaq
+    tasks_data = [
+        {
+            'title': 'YOM Logistics üçün yeni qiymət təklifi hazırlamaq',
+            'priority': 'High', 'status': 'Todo', 'assigned_to': 'Administrator',
+            'due_date': '2026-11-17 18:00:00', 'reference_doctype': 'CRM Organization', 'reference_docname': 'YOM Logistics',
+            'description': 'Bakı-Gəncə marşrutu üzrə endirimli tarif cədvəlini tərtib edib müştəriyə göndərmək.'
+        },
+        {
+            'title': 'Solida Xırdalan ilə müqavilə bəndlərini razılaşdırmaq',
+            'priority': 'High', 'status': 'In Progress', 'assigned_to': 'Administrator',
+            'due_date': '2026-11-18 15:00:00', 'reference_doctype': 'CRM Organization', 'reference_docname': 'Solida Xırdalan (SOLİDA MMC)',
+            'description': 'Ödəniş müddəti və çatdırılma qrafiki üzrə hüquq şöbəsi ilə birgə razılaşdırma aparmaq.'
+        },
+        {
+            'title': 'OBA Market filialının sifariş sorğusunu cavablandırmaq',
+            'priority': 'Medium', 'status': 'Todo', 'assigned_to': 'Administrator',
+            'due_date': '2026-11-19 12:00:00', 'reference_doctype': 'CRM Organization', 'reference_docname': 'OBA MARKET - 69',
+            'description': 'Filial üçün tələb olunan məhsulların mövcudluğunu anbarla dəqiqləşdirmək.'
+        },
+        {
+            'title': 'AZTEXNİKA MMC ilə ilkin görüş keçirildi və akt imzalandı',
+            'priority': 'Medium', 'status': 'Done', 'assigned_to': 'Administrator',
+            'due_date': '2026-11-16 16:00:00', 'reference_doctype': 'CRM Organization', 'reference_docname': 'AZTEXNİKA MMC',
+            'description': 'İlkin təqdimat uğurla yekunlaşdı, tender komissiyasına sənədlər təqdim edildi.'
+        }
+    ]
+    tasks_created = 0
+    for t in tasks_data:
+        if not frappe.db.exists('CRM Task', {'title': t['title']}):
+            doc = frappe.get_doc({'doctype': 'CRM Task', **t})
+            doc.insert(ignore_permissions=True)
+            tasks_created += 1
+    frappe.db.commit()
+    frappe.clear_cache()
+    print(f"✓ Görevlər (CRM Tasks) yaradıldı: {tasks_created}")
 
 def main():
     frappe.init(site="frontend", sites_path=bench_sites)
@@ -423,12 +563,15 @@ def main():
     setup_sample_pipeline(directors)
 
     print("\n=======================================================")
-    print("✓ FRAAPE CRM BÜTÜN İDXAL VƏ SAZLAMA TAMAMLANDI!")
+    print("✓ FRAPPE CRM BÜTÜN İDXAL VƏ SAZLAMA TAMAMLANDI!")
     print(f"  - Cəmi Şirkət (CRM Organization): {frappe.db.count('CRM Organization')}")
     print(f"  - Cəmi Ərazi (CRM Territory): {frappe.db.count('CRM Territory')}")
     print(f"  - Cəmi Sənaye (CRM Industry): {frappe.db.count('CRM Industry')}")
     print(f"  - Cəmi Sövdələşmə (CRM Deal): {frappe.db.count('CRM Deal')}")
     print(f"  - Cəmi Əlaqə (Contact): {frappe.db.count('Contact')}")
+    print(f"  - Cəmi Zəng Qeydi (CRM Call Log): {frappe.db.count('CRM Call Log')}")
+    print(f"  - Cəmi Təqvim Tədbiri (Event): {frappe.db.count('Event')}")
+    print(f"  - Cəmi Görev (CRM Task): {frappe.db.count('CRM Task')}")
     print("=======================================================")
 
 if __name__ == "__main__":
