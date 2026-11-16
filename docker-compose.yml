@@ -1,0 +1,225 @@
+name: frappe-crm
+
+services:
+  backend:
+    image: ghcr.io/frappe/crm:latest
+    restart: unless-stopped
+    volumes:
+      - sites:/home/frappe/frappe-bench/sites
+      - logs:/home/frappe/frappe-bench/logs
+    environment:
+      DB_HOST: db
+      DB_PORT: "3306"
+      MYSQL_ROOT_PASSWORD: admin
+      MARIADB_ROOT_PASSWORD: admin
+    depends_on:
+      configurator:
+        condition: service_completed_successfully
+    networks:
+      - frappe-crm-net
+
+  configurator:
+    image: ghcr.io/frappe/crm:latest
+    restart: "no"
+    entrypoint:
+      - bash
+      - -c
+    command:
+      - >
+        echo -e "frappe\ncrm" > sites/apps.txt;
+        bench set-config -g db_host $$DB_HOST;
+        bench set-config -gp db_port $$DB_PORT;
+        bench set-config -g redis_cache "redis://$$REDIS_CACHE";
+        bench set-config -g redis_queue "redis://$$REDIS_QUEUE";
+        bench set-config -g redis_socketio "redis://$$REDIS_QUEUE";
+        bench set-config -gp socketio_port $$SOCKETIO_PORT;
+    environment:
+      DB_HOST: db
+      DB_PORT: "3306"
+      REDIS_CACHE: redis-cache:6379
+      REDIS_QUEUE: redis-queue:6379
+      SOCKETIO_PORT: "9000"
+    volumes:
+      - sites:/home/frappe/frappe-bench/sites
+      - logs:/home/frappe/frappe-bench/logs
+    networks:
+      - frappe-crm-net
+
+  create-site:
+    image: ghcr.io/frappe/crm:latest
+    restart: "no"
+    volumes:
+      - sites:/home/frappe/frappe-bench/sites
+      - logs:/home/frappe/frappe-bench/logs
+      - ./scripts:/opt/scripts:ro
+    entrypoint:
+      - bash
+      - -c
+    command:
+      - >
+        wait-for-it -t 120 db:3306;
+        wait-for-it -t 120 redis-cache:6379;
+        wait-for-it -t 120 redis-queue:6379;
+        export start=`date +%s`;
+        until [[ -n `grep -hs ^ sites/common_site_config.json | jq -r ".db_host // empty"` ]] && \
+          [[ -n `grep -hs ^ sites/common_site_config.json | jq -r ".redis_cache // empty"` ]] && \
+          [[ -n `grep -hs ^ sites/common_site_config.json | jq -r ".redis_queue // empty"` ]];
+        do
+          echo "Waiting for sites/common_site_config.json...";
+          sleep 3;
+          if (( `date +%s`-start > 120 )); then
+            echo "Timeout waiting for common_site_config.json";
+            exit 1;
+          fi;
+        done;
+        echo "Configuration ready!";
+        if [ ! -d "sites/frontend" ]; then
+          echo "Creating site frontend with Frappe CRM...";
+          bench new-site --mariadb-user-host-login-scope='%' --admin-password=admin --db-root-username=root --db-root-password=admin --install-app crm --set-default frontend;
+          bench --site frontend set-config developer_mode 1;
+          bench --site frontend set-config mute_emails 1;
+          bench --site frontend clear-cache;
+        fi;
+        echo "Applying Turkish language, AZN currency, and completing setup wizard...";
+        cd /home/frappe/frappe-bench/sites && /home/frappe/frappe-bench/env/bin/python /opt/scripts/setup_crm.py;
+        echo "Site frontend is ready!";
+    networks:
+      - frappe-crm-net
+
+  db:
+    image: mariadb:10.8
+    restart: unless-stopped
+    command:
+      - --character-set-server=utf8mb4
+      - --collation-server=utf8mb4_unicode_ci
+      - --skip-character-set-client-handshake
+      - --skip-innodb-read-only-compressed
+    environment:
+      MYSQL_ROOT_PASSWORD: admin
+      MARIADB_ROOT_PASSWORD: admin
+    volumes:
+      - db-data:/var/lib/mysql
+    networks:
+      - frappe-crm-net
+
+  frontend:
+    image: ghcr.io/frappe/crm:latest
+    restart: unless-stopped
+    command:
+      - nginx-entrypoint.sh
+    environment:
+      BACKEND: backend:8000
+      FRAPPE_SITE_NAME_HEADER: frontend
+      SOCKETIO: websocket:9000
+      UPSTREAM_REAL_IP_ADDRESS: 127.0.0.1
+      UPSTREAM_REAL_IP_HEADER: X-Forwarded-For
+      UPSTREAM_REAL_IP_RECURSIVE: "off"
+      PROXY_READ_TIMEOUT: 120
+      CLIENT_MAX_BODY_SIZE: 50m
+    volumes:
+      - sites:/home/frappe/frappe-bench/sites
+      - logs:/home/frappe/frappe-bench/logs
+    ports:
+      - "8080:8080"
+    depends_on:
+      - backend
+      - websocket
+    networks:
+      - frappe-crm-net
+
+  queue-long:
+    image: ghcr.io/frappe/crm:latest
+    restart: unless-stopped
+    command:
+      - bench
+      - worker
+      - --queue
+      - long,default,short
+    volumes:
+      - sites:/home/frappe/frappe-bench/sites
+      - logs:/home/frappe/frappe-bench/logs
+    environment:
+      FRAPPE_REDIS_CACHE: redis://redis-cache:6379
+      FRAPPE_REDIS_QUEUE: redis://redis-queue:6379
+    depends_on:
+      configurator:
+        condition: service_completed_successfully
+    networks:
+      - frappe-crm-net
+
+  queue-short:
+    image: ghcr.io/frappe/crm:latest
+    restart: unless-stopped
+    command:
+      - bench
+      - worker
+      - --queue
+      - short,default
+    volumes:
+      - sites:/home/frappe/frappe-bench/sites
+      - logs:/home/frappe/frappe-bench/logs
+    environment:
+      FRAPPE_REDIS_CACHE: redis://redis-cache:6379
+      FRAPPE_REDIS_QUEUE: redis://redis-queue:6379
+    depends_on:
+      configurator:
+        condition: service_completed_successfully
+    networks:
+      - frappe-crm-net
+
+  redis-cache:
+    image: redis:6.2-alpine
+    restart: unless-stopped
+    networks:
+      - frappe-crm-net
+
+  redis-queue:
+    image: redis:6.2-alpine
+    restart: unless-stopped
+    volumes:
+      - redis-queue-data:/data
+    networks:
+      - frappe-crm-net
+
+  scheduler:
+    image: ghcr.io/frappe/crm:latest
+    restart: unless-stopped
+    command:
+      - bench
+      - schedule
+    volumes:
+      - sites:/home/frappe/frappe-bench/sites
+      - logs:/home/frappe/frappe-bench/logs
+    depends_on:
+      configurator:
+        condition: service_completed_successfully
+    networks:
+      - frappe-crm-net
+
+  websocket:
+    image: ghcr.io/frappe/crm:latest
+    restart: unless-stopped
+    command:
+      - node
+      - /home/frappe/frappe-bench/apps/frappe/socketio.js
+    environment:
+      FRAPPE_REDIS_CACHE: redis://redis-cache:6379
+      FRAPPE_REDIS_QUEUE: redis://redis-queue:6379
+    volumes:
+      - sites:/home/frappe/frappe-bench/sites
+      - logs:/home/frappe/frappe-bench/logs
+    depends_on:
+      configurator:
+        condition: service_completed_successfully
+    networks:
+      - frappe-crm-net
+
+volumes:
+  db-data:
+  redis-queue-data:
+  sites:
+  logs:
+
+networks:
+  frappe-crm-net:
+    driver: bridge
