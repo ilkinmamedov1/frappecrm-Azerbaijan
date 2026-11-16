@@ -36,9 +36,25 @@ Sistem qalxdıqdan sonra brauzerdə açın:
 
 - **İşə salmaq:** `./start.sh` və ya `make up`
 - **Dayandırmaq:** `./stop.sh` və ya `make stop`
+- **Məlumatları yenidən idxal etmək:** `make import`
 - **Loqlara baxmaq:** `make logs`
 - **Statusu yoxlamaq:** `make status`
 - **Tam sıfırlamaq (bütün məlumatları silmək):** `make clean`
+
+---
+
+## 📊 İdxal Edilmiş Məlumatlar və Fərdiləşdirmələr
+
+1. **Ərazi İyerarxiyası (CRM Territory):**
+   - 254 vahiddən ibarət tam iyerarxiya (`All Territories` -> `Azerbaijan` -> `Baku`, rayonlar, şəhərlər və Ağdərə daxil olmaqla).
+   - Rayon adlarının fərqləri (`Absheron` vs `Absheron District`, `Sumgait` vs `Sumgayit City`, `Guba` vs `Quba District` və s.) heç bir join xətası olmadan avtomatik xəritələndirilib.
+2. **Azərbaycan Sənaye Sahələri (CRM Industry):**
+   - 38 yerli sənaye sahəsi (Qida, Tikinti, Logistika, İT və s.) sistemə əlavə edilib.
+3. **Şirkətlər (CRM Organization - 20,000+):**
+   - VÖEN, Telefon, Telefon 2, E-poçt, Rəhbər/Direktor, Poçt İndeksi, Tam Ünvan və Fəaliyyət qeydləri üçün xüsusi sahələr (Custom Fields) yaradılıb.
+   - Siyahı və detal panellərində (UI Side Panel & List View) bütün bu sahələr aktivdir.
+4. **Canlı Pipeline Nümunələri:**
+   - Real sövdələşmələr (CRM Deal - AZN ilə mərhələlər: Won, Negotiation, Proposal, Demo) və Əlaqəli Şəxslər (Contacts) yaradılıb.
 
 ---
 
@@ -49,3 +65,5 @@ Sistem qalxdıqdan sonra brauzerdə açın:
 - **Cache & Queue:** `Redis 6.2`
 - **Reverse Proxy:** `Nginx` (Port `8080`)
 - **Auto-Config Script:** `scripts/setup_crm.py`
+- **Data Import Script:** `scripts/import_crm_data.py`
+

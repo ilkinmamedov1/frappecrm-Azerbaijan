@@ -7,6 +7,8 @@ services:
     volumes:
       - sites:/home/frappe/frappe-bench/sites
       - logs:/home/frappe/frappe-bench/logs
+      - ./scripts:/opt/scripts:ro
+      - ./data:/opt/data:ro
     environment:
       DB_HOST: db
       DB_PORT: "3306"
@@ -52,6 +54,7 @@ services:
       - sites:/home/frappe/frappe-bench/sites
       - logs:/home/frappe/frappe-bench/logs
       - ./scripts:/opt/scripts:ro
+      - ./data:/opt/data:ro
     entrypoint:
       - bash
       - -c
@@ -82,6 +85,8 @@ services:
         fi;
         echo "Applying Turkish language, AZN currency, and completing setup wizard...";
         cd /home/frappe/frappe-bench/sites && /home/frappe/frappe-bench/env/bin/python /opt/scripts/setup_crm.py;
+        echo "Importing territories, industries, organizations, and sample pipeline...";
+        cd /home/frappe/frappe-bench/sites && /home/frappe/frappe-bench/env/bin/python /opt/scripts/import_crm_data.py;
         echo "Site frontend is ready!";
     networks:
       - frappe-crm-net
