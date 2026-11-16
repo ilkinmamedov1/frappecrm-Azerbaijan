@@ -353,31 +353,81 @@ def import_organizations(org_file):
     print("✓ Bütün şirkətlər uğurla idxal olundu!")
     return directors_for_contacts
 
-def setup_sample_pipeline(directors):
-    print("--> 6. UI üçün nümunəvi Sövdələşmələr (Deals) və Əlaqələr (Contacts) yaradılır...")
+    # Contact görünüşünü və full_name sahəsini tənzimləyirik
+    from frappe.custom.doctype.property_setter.property_setter import make_property_setter
+    make_property_setter('Contact', 'full_name', 'hidden', '0', 'Check', validate_fields_for_doctype=False)
     
+    contact_cols = [
+        {'label': 'Adı', 'type': 'Data', 'key': 'full_name', 'width': '16rem'},
+        {'label': 'Vəzifə', 'type': 'Data', 'key': 'designation', 'width': '11rem'},
+        {'label': 'Telefon', 'type': 'Data', 'key': 'mobile_no', 'width': '12rem'},
+        {'label': 'E-poçt', 'type': 'Data', 'key': 'email_id', 'width': '14rem'},
+        {'label': 'Təşkilat', 'type': 'Data', 'key': 'company_name', 'width': '16rem'},
+        {'label': 'Son Yenilənmə', 'type': 'Datetime', 'key': 'modified', 'width': '8rem'}
+    ]
+    contact_rows = ['name', 'full_name', 'designation', 'mobile_no', 'email_id', 'company_name', 'image', 'modified']
+    
+    v_contact = 'Contact-Admin-default-list'
+    if not frappe.db.exists('CRM View Settings', v_contact):
+        frappe.get_doc({
+            'doctype': 'CRM View Settings',
+            'name': v_contact,
+            'label': 'Bütün Kişilər',
+            'dt': 'Contact',
+            'type': 'list',
+            'is_default': 1,
+            'is_standard': 1,
+            'user': 'Administrator',
+            'public': 1,
+            'columns': json.dumps(contact_cols),
+            'rows': json.dumps(contact_rows)
+        }).insert(ignore_permissions=True)
+
     # Contact yaratmaq
     contact_count = 0
-    for d in directors[:15]:
+    for d in directors:
         full_name = d['director']
-        # remove suffixes like -direktor
         if '-' in full_name:
             full_name = full_name.split('-')[0].strip()
-        first_name = full_name.split()[0]
-        last_name = " ".join(full_name.split()[1:]) if len(full_name.split()) > 1 else ""
+        if '/' in full_name:
+            full_name = full_name.split('/')[0].strip()
+        parts = full_name.split()
+        if not parts or len(parts[0]) < 2:
+            continue
+        first_name = parts[0]
+        last_name = " ".join(parts[1:]) if len(parts) > 1 else ""
 
         if not frappe.db.exists('Contact', {'first_name': first_name, 'company_name': d['org']}):
             contact = frappe.get_doc({
                 'doctype': 'Contact',
                 'first_name': first_name,
                 'last_name': last_name,
+                'full_name': f"{first_name} {last_name}".strip(),
                 'company_name': d['org'],
-                'mobile_no': d['phone'],
-                'email_id': d['email'] if d['email'] and d['email'] != '0' else None,
+                'designation': 'Direktor',
                 'links': [
                     {'link_doctype': 'CRM Organization', 'link_name': d['org']}
                 ]
             })
+            if d['phone']:
+                clean_phone = d['phone'].split(',')[0].split(';')[0].strip()
+                contact.append('phone_nos', {
+                    'phone': clean_phone,
+                    'is_primary_phone': 1,
+                    'is_primary_mobile_no': 1
+                })
+                contact.mobile_no = clean_phone
+                contact.phone = clean_phone
+
+            if d['email'] and d['email'] != '0':
+                clean_emails = [e.strip() for e in d['email'].replace(',', ';').split(';') if '@' in e and '.' in e]
+                if clean_emails:
+                    contact.append('email_ids', {
+                        'email_id': clean_emails[0],
+                        'is_primary': 1
+                    })
+                    contact.email_id = clean_emails[0]
+
             try:
                 contact.insert(ignore_permissions=True)
                 contact_count += 1
